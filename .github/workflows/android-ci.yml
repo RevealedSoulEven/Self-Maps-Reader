@@ -19,39 +19,7 @@ jobs:
           java-version: 17
 
       - name: Setup Android SDK
-        run: |
-          # Create SDK directory
-          SDK_ROOT="$HOME/android-sdk"
-          mkdir -p $SDK_ROOT
-          
-          # Download command line tools
-          cd /tmp
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          
-          # Create correct directory structure and extract
-          mkdir -p $SDK_ROOT/cmdline-tools/latest
-          unzip -q commandlinetools-linux-11076708_latest.zip -d $SDK_ROOT/cmdline-tools/latest/
-          rm commandlinetools-linux-11076708_latest.zip
-          
-          # Fix directory structure (move contents up one level)
-          mv $SDK_ROOT/cmdline-tools/latest/cmdline-tools/* $SDK_ROOT/cmdline-tools/latest/
-          rm -r $SDK_ROOT/cmdline-tools/latest/cmdline-tools
-          
-          # Set environment variables
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
-          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
-
-      - name: Accept Licenses & Install Packages
-        run: |
-          # Use full path to sdkmanager and accept licenses
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses --sdk_root=$ANDROID_SDK_ROOT < <(echo y)
-          
-          # Install packages using full path
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
-      - name: Install Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: android-actions/setup-android@v3
 
       - name: Build Debug APK
         run: gradle assembleDebug

@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      ANDROID_SDK_ROOT: /usr/local/android-sdk
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
     steps:
     - name: Checkout
@@ -32,26 +32,21 @@ jobs:
         mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
         cd $ANDROID_SDK_ROOT/cmdline-tools
         wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline.zip
-        unzip cmdline.zip
+        unzip cmdline.zip -d cmdline-tools
         rm cmdline.zip
-        # move to proper folder expected by sdkmanager
         mkdir -p $ANDROID_SDK_ROOT/cmdline-tools/latest
         mv cmdline-tools/* $ANDROID_SDK_ROOT/cmdline-tools/latest/ || true
-        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+        echo "PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_ENV
 
-    - name: Install Android SDK packages (SDK, Platform, Build-tools, NDK)
-      env:
-        PATH: ${{ env.PATH }}:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+    - name: Install Android SDK packages
       run: |
-        yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses
-        sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-33" "build-tools;33.0.2" "ndk;23.1.7779620" "cmake;3.10.2.4988404"
+        sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses
+        sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
+          "platform-tools" "platforms;android-33" "build-tools;33.0.2" \
+          "ndk;23.1.7779620" "cmake;3.10.2.4988404"
 
     - name: Build debug APK
-      env:
-        ANDROID_SDK_ROOT: /usr/local/android-sdk
-        PATH: ${{ env.PATH }}:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools
       run: |
-        # Ensure gradle wrapper exists; if not, run gradle to build (system gradle installed above)
         ./gradlew assembleDebug --stacktrace || gradle assembleDebug --stacktrace
 
     - name: Upload APK artifact

@@ -54,8 +54,8 @@ public class MainActivity extends Activity {
         exportButton.setOnClickListener(v -> exportProcStatus());
 
         hashButton.setOnClickListener(v -> {
-            String hash = getLibArtHash();
-            outputText.setText("libart.so SHA256:\n" + hash);
+            String hashResult = getLibArtHash();
+            outputText.setText(hashResult);
         });
     }
 

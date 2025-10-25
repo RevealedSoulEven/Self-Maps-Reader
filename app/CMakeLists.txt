@@ -1,15 +1,18 @@
 cmake_minimum_required(VERSION 3.10.2)
 project("selfmapsreader")
 
+# Set the native library name
 add_library(
-        native-lib
-        SHARED
-        native-lib.c)
+    native-lib
+    SHARED
+    native-lib.c
+)
 
-find_library(
-        log-lib
-        log)
+# Include Android native log if needed
+find_library(log-lib log)
 
+# Link against the log library (optional)
 target_link_libraries(
-        native-lib
-        ${log-lib})
+    native-lib
+    ${log-lib}
+)

@@ -1,18 +1,33 @@
 package com.example.selfmapsreader;
 
 import android.app.Activity;
-import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
 import android.widget.Button;
+import android.widget.ScrollView;
 import android.widget.TextView;
+import android.view.View;
+import android.content.Intent;
+import android.net.Uri;
+
+import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.content.FileProvider;
 
-import java.io.*;
+import java.io.File;
 
 public class MainActivity extends Activity {
+
+    static {
+        System.loadLibrary("native-lib");
+    }
+
     private TextView outputText;
-    private File outputFile;
+    private File statusFile;
+    private File libartHashFile;
+
+    // Native methods
+    public native String readProcSelfStatus();
+    public native String getLibArtHash();
+    public native boolean exportProcSelfStatus(String path);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -20,40 +35,43 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         outputText = findViewById(R.id.outputText);
-        Button readButton = findViewById(R.id.readButton);
-        Button shareButton = findViewById(R.id.shareButton);
+        Button readStatusBtn = findViewById(R.id.readButton);
+        Button exportBtn = findViewById(R.id.shareButton);
+        Button hashBtn = findViewById(R.id.hashButton);
+        Button toggleThemeBtn = findViewById(R.id.toggleThemeButton);
 
-        readButton.setOnClickListener(v -> readProcMaps());
-        shareButton.setOnClickListener(v -> shareFile());
-    }
+        // Toggle theme (light/dark)
+        toggleThemeBtn.setOnClickListener(v -> {
+            int mode = AppCompatDelegate.getDefaultNightMode();
+            if (mode == AppCompatDelegate.MODE_NIGHT_YES)
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+            else
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+        });
 
-    private void readProcMaps() {
-        try {
-            outputFile = new File(getFilesDir(), "self_maps.txt");
-            BufferedReader reader = new BufferedReader(new FileReader("/proc/self/maps"));
-            BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile));
+        readStatusBtn.setOnClickListener(v -> {
+            String text = readProcSelfStatus();
+            outputText.setText(text);
+        });
 
-            StringBuilder builder = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                builder.append(line).append("\n");
-                writer.write(line);
-                writer.newLine();
+        exportBtn.setOnClickListener(v -> {
+            File outFile = new File(getFilesDir(), "proc_self_status.txt");
+            boolean ok = exportProcSelfStatus(outFile.getAbsolutePath());
+            if (ok) {
+                shareFile(outFile);
+            } else {
+                outputText.setText("Export failed");
             }
-            reader.close();
-            writer.close();
-            outputText.setText(builder.toString());
-        } catch (Exception e) {
-            outputText.setText("Error: " + e.getMessage());
-        }
+        });
+
+        hashBtn.setOnClickListener(v -> {
+            String hash = getLibArtHash();
+            outputText.setText("libart.so checksum:\n" + hash);
+        });
     }
 
-    private void shareFile() {
-        if (outputFile == null || !outputFile.exists()) return;
-
-        Uri uri = FileProvider.getUriForFile(this,
-                getPackageName() + ".provider", outputFile);
-
+    private void shareFile(File file) {
+        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".provider", file);
         Intent intent = new Intent(Intent.ACTION_SEND);
         intent.setType("text/plain");
         intent.putExtra(Intent.EXTRA_STREAM, uri);

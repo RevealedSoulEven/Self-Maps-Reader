@@ -1,8 +1,8 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 34
     namespace "com.example.selfmapsreader"
+    compileSdkVersion 34
 
     defaultConfig {
         applicationId "com.example.selfmapsreader"
@@ -10,6 +10,13 @@ android {
         targetSdkVersion 34
         versionCode 1
         versionName "1.0"
+
+        // Link CMake native build
+        externalNativeBuild {
+            cmake {
+                cppFlags ""
+            }
+        }
     }
 
     buildTypes {
@@ -17,6 +24,16 @@ android {
             minifyEnabled false
         }
     }
+
+    // Point Gradle to your CMakeLists.txt file
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+        }
+    }
+
+    // Optional: specify your NDK version if needed
+    ndkVersion "26.1.10909125"
 }
 
 dependencies {

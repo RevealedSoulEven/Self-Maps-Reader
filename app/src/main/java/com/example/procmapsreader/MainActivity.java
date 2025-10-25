@@ -3,16 +3,15 @@ package com.example.selfmapsreader;
 import android.app.Activity;
 import android.os.Bundle;
 import android.widget.Button;
-import android.widget.ScrollView;
 import android.widget.TextView;
-import android.view.View;
+import android.widget.ScrollView;
 import android.content.Intent;
 import android.net.Uri;
 
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.content.FileProvider;
 
-import java.io.File;
+import java.io.*;
 
 public class MainActivity extends Activity {
 
@@ -21,13 +20,11 @@ public class MainActivity extends Activity {
     }
 
     private TextView outputText;
-    private File statusFile;
-    private File libartHashFile;
+    private File outputFile;
 
     // Native methods
     public native String readProcSelfStatus();
     public native String getLibArtHash();
-    public native boolean exportProcSelfStatus(String path);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,13 +32,13 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         outputText = findViewById(R.id.outputText);
-        Button readStatusBtn = findViewById(R.id.readButton);
-        Button exportBtn = findViewById(R.id.shareButton);
-        Button hashBtn = findViewById(R.id.hashButton);
-        Button toggleThemeBtn = findViewById(R.id.toggleThemeButton);
+        Button readButton = findViewById(R.id.readButton);
+        Button exportButton = findViewById(R.id.shareButton);
+        Button hashButton = findViewById(R.id.hashButton);
+        Button themeButton = findViewById(R.id.toggleThemeButton);
 
-        // Toggle theme (light/dark)
-        toggleThemeBtn.setOnClickListener(v -> {
+        // Toggle light/dark mode
+        themeButton.setOnClickListener(v -> {
             int mode = AppCompatDelegate.getDefaultNightMode();
             if (mode == AppCompatDelegate.MODE_NIGHT_YES)
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
@@ -49,29 +46,43 @@ public class MainActivity extends Activity {
                 AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
         });
 
-        readStatusBtn.setOnClickListener(v -> {
-            String text = readProcSelfStatus();
-            outputText.setText(text);
+        readButton.setOnClickListener(v -> {
+            String result = readProcSelfStatus();
+            outputText.setText(result);
         });
 
-        exportBtn.setOnClickListener(v -> {
-            File outFile = new File(getFilesDir(), "proc_self_status.txt");
-            boolean ok = exportProcSelfStatus(outFile.getAbsolutePath());
-            if (ok) {
-                shareFile(outFile);
-            } else {
-                outputText.setText("Export failed");
-            }
-        });
+        exportButton.setOnClickListener(v -> exportProcStatus());
 
-        hashBtn.setOnClickListener(v -> {
+        hashButton.setOnClickListener(v -> {
             String hash = getLibArtHash();
-            outputText.setText("libart.so checksum:\n" + hash);
+            outputText.setText("libart.so SHA256:\n" + hash);
         });
     }
 
+    private void exportProcStatus() {
+        try {
+            outputFile = new File(getFilesDir(), "proc_self_status.txt");
+            BufferedReader reader = new BufferedReader(new FileReader("/proc/self/status"));
+            BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile));
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                writer.write(line);
+                writer.newLine();
+            }
+            reader.close();
+            writer.close();
+
+            shareFile(outputFile);
+        } catch (Exception e) {
+            outputText.setText("Error exporting: " + e.getMessage());
+        }
+    }
+
     private void shareFile(File file) {
-        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".provider", file);
+        Uri uri = FileProvider.getUriForFile(this,
+                getPackageName() + ".provider", file);
+
         Intent intent = new Intent(Intent.ACTION_SEND);
         intent.setType("text/plain");
         intent.putExtra(Intent.EXTRA_STREAM, uri);

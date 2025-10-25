@@ -157,27 +157,29 @@ Java_com_example_selfmapsreader_MainActivity_getLibArtHash(JNIEnv* env, jobject 
     int found=0;
 
     while(fgets(line,sizeof(line),maps)){
-        if(strstr(line,"libart.so")){
-            unsigned long start,end;
-            if(sscanf(line,"%lx-%lx",&start,&end)==2){
-                FILE* mem=fopen("/proc/self/mem","rb");
-                if(!mem) continue;
-                fseek(mem,start,SEEK_SET);
-                unsigned long size=end-start;
-                total_mem_size += size;
-                sha256_update(&mem_ctx,(const uint8_t*)&start,sizeof(start)); // marker
-                while(size>0){
-                    size_t chunk=size>4096?4096:size;
-                    if(fread(buf,1,chunk,mem)!=chunk) break;
-                    sha256_update(&mem_ctx,buf,chunk);
-                    size-=chunk;
-                }
-                fclose(mem);
-                if(!found){ mem_start=start; found=1; }
-                mem_end=end;
+    if(strstr(line,"libart.so")){
+        unsigned long start,end;
+        char perms[8];
+        if(sscanf(line,"%lx-%lx %4s",&start,&end,perms)==3){
+            if (strstr(perms,"rw")) continue; // ✅ Skip writable sections
+            FILE* mem=fopen("/proc/self/mem","rb");
+            if(!mem) continue;
+            fseek(mem,start,SEEK_SET);
+            unsigned long size=end-start;
+            total_mem_size += size;
+            while(size>0){
+                size_t chunk=size>4096?4096:size;
+                if(fread(buf,1,chunk,mem)!=chunk) break;
+                sha256_update(&mem_ctx,buf,chunk);
+                size-=chunk;
             }
+            fclose(mem);
+            if(!found){ mem_start=start; found=1; }
+            mem_end=end;
         }
     }
+}
+
     fclose(maps);
 
     unsigned char mem_hash[32];

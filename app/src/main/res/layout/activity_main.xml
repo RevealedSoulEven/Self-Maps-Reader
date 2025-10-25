@@ -12,7 +12,7 @@
 
     <Button
         android:id="@+id/shareButton"
-        android:text="Export & Share Status"
+        android:text="Export &amp; Share Status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp" />

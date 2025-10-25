@@ -5,7 +5,7 @@ project("selfmapsreader")
 add_library(
     native-lib
     SHARED
-    native-lib.c
+    src/main/cpp/native-lib.c
 )
 
 # Include Android native log if needed

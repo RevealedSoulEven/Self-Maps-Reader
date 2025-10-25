@@ -3,8 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
-// ================= SHA256 Minimal Implementation ==================
+// ================= SHA256 Implementation ==================
 typedef struct {
     uint64_t bitlen;
     uint32_t state[8];
@@ -34,17 +36,17 @@ static const uint32_t k[64] = {
 
 void sha256_transform(SHA256_CTX *ctx, const uint8_t data[]) {
     uint32_t a,b,c,d,e,f,g,h,i,j,t1,t2,m[64];
-    for (i = 0, j = 0; i < 16; ++i, j += 4)
-        m[i] = (data[j] << 24) | (data[j+1] << 16) | (data[j+2] << 8) | (data[j+3]);
-    for (; i < 64; ++i)
-        m[i] = SIG1(m[i-2]) + m[i-7] + SIG0(m[i-15]) + m[i-16];
-    a = ctx->state[0]; b = ctx->state[1]; c = ctx->state[2]; d = ctx->state[3];
-    e = ctx->state[4]; f = ctx->state[5]; g = ctx->state[6]; h = ctx->state[7];
-    for (i = 0; i < 64; ++i) {
-        t1 = h + EP1(e) + CH(e,f,g) + k[i] + m[i];
-        t2 = EP0(a) + MAJ(a,b,c);
-        h = g; g = f; f = e; e = d + t1;
-        d = c; c = b; b = a; a = t1 + t2;
+    for (i=0,j=0;i<16;++i,j+=4)
+        m[i]=(data[j]<<24)|(data[j+1]<<16)|(data[j+2]<<8)|(data[j+3]);
+    for(;i<64;++i)
+        m[i]=SIG1(m[i-2])+m[i-7]+SIG0(m[i-15])+m[i-16];
+    a=ctx->state[0]; b=ctx->state[1]; c=ctx->state[2]; d=ctx->state[3];
+    e=ctx->state[4]; f=ctx->state[5]; g=ctx->state[6]; h=ctx->state[7];
+    for(i=0;i<64;++i){
+        t1=h+EP1(e)+CH(e,f,g)+k[i]+m[i];
+        t2=EP0(a)+MAJ(a,b,c);
+        h=g; g=f; f=e; e=d+t1;
+        d=c; c=b; b=a; a=t1+t2;
     }
     ctx->state[0]+=a; ctx->state[1]+=b; ctx->state[2]+=c; ctx->state[3]+=d;
     ctx->state[4]+=e; ctx->state[5]+=f; ctx->state[6]+=g; ctx->state[7]+=h;
@@ -58,11 +60,10 @@ void sha256_init(SHA256_CTX *ctx){
     ctx->state[6]=0x1f83d9ab; ctx->state[7]=0x5be0cd19;
 }
 
-void sha256_update(SHA256_CTX *ctx, const uint8_t data[], size_t len){
+void sha256_update(SHA256_CTX *ctx,const uint8_t data[],size_t len){
     for(size_t i=0;i<len;++i){
         ctx->data[ctx->datalen]=data[i];
-        ctx->datalen++;
-        if(ctx->datalen==64){
+        if(++ctx->datalen==64){
             sha256_transform(ctx,ctx->data);
             ctx->bitlen+=512;
             ctx->datalen=0;
@@ -70,26 +71,13 @@ void sha256_update(SHA256_CTX *ctx, const uint8_t data[], size_t len){
     }
 }
 
-void sha256_final(SHA256_CTX *ctx, uint8_t hash[]){
+void sha256_final(SHA256_CTX *ctx,uint8_t hash[]){
     size_t i=ctx->datalen;
-    if(ctx->datalen<56){
-        ctx->data[i++]=0x80;
-        while(i<56) ctx->data[i++]=0x00;
-    } else {
-        ctx->data[i++]=0x80;
-        while(i<64) ctx->data[i++]=0x00;
-        sha256_transform(ctx,ctx->data);
-        memset(ctx->data,0,56);
-    }
-    ctx->bitlen += ctx->datalen * 8;
-    ctx->data[63] = ctx->bitlen;
-    ctx->data[62] = ctx->bitlen >> 8;
-    ctx->data[61] = ctx->bitlen >> 16;
-    ctx->data[60] = ctx->bitlen >> 24;
-    ctx->data[59] = ctx->bitlen >> 32;
-    ctx->data[58] = ctx->bitlen >> 40;
-    ctx->data[57] = ctx->bitlen >> 48;
-    ctx->data[56] = ctx->bitlen >> 56;
+    if(ctx->datalen<56){ ctx->data[i++]=0x80; while(i<56) ctx->data[i++]=0x00; }
+    else { ctx->data[i++]=0x80; while(i<64) ctx->data[i++]=0x00; sha256_transform(ctx,ctx->data); memset(ctx->data,0,56); }
+    ctx->bitlen+=ctx->datalen*8;
+    ctx->data[63]=ctx->bitlen; ctx->data[62]=ctx->bitlen>>8; ctx->data[61]=ctx->bitlen>>16; ctx->data[60]=ctx->bitlen>>24;
+    ctx->data[59]=ctx->bitlen>>32; ctx->data[58]=ctx->bitlen>>40; ctx->data[57]=ctx->bitlen>>48; ctx->data[56]=ctx->bitlen>>56;
     sha256_transform(ctx,ctx->data);
     for(i=0;i<4;++i){
         hash[i]=(ctx->state[0]>>(24-i*8))&0xff;
@@ -102,9 +90,15 @@ void sha256_final(SHA256_CTX *ctx, uint8_t hash[]){
         hash[i+28]=(ctx->state[7]>>(24-i*8))&0xff;
     }
 }
-// ================= END SHA256 =====================
 
-// Read /proc/self/status
+void to_hex(const uint8_t *hash, char *out) {
+    for (int i=0;i<32;i++) sprintf(out+i*2,"%02x",hash[i]);
+    out[64]=0;
+}
+
+// ========================= JNI METHODS =========================
+
+// ✅ Read /proc/self/status
 JNIEXPORT jstring JNICALL
 Java_com_example_selfmapsreader_MainActivity_readProcSelfStatus(JNIEnv* env, jobject thiz) {
     FILE* f = fopen("/proc/self/status", "r");
@@ -126,27 +120,85 @@ Java_com_example_selfmapsreader_MainActivity_readProcSelfStatus(JNIEnv* env, job
     return result;
 }
 
-// Hash /apex/com.android.art/lib64/libart.so
+// ✅ Calculate SHA256 + size + address info for libart.so
 JNIEXPORT jstring JNICALL
 Java_com_example_selfmapsreader_MainActivity_getLibArtHash(JNIEnv* env, jobject thiz) {
-    const char* path = "/apex/com.android.art/lib64/libart.so";
-    FILE* f = fopen(path, "rb");
-    if (!f) return (*env)->NewStringUTF(env, "Failed to open libart.so");
+    const char* disk_path = "/apex/com.android.art/lib64/libart.so";
 
-    SHA256_CTX ctx;
-    sha256_init(&ctx);
+    // ---- Get file size ----
+    struct stat st;
+    long file_size = 0;
+    if (stat(disk_path, &st) == 0) file_size = st.st_size;
+
+    // ---- HASH DISK ----
+    FILE* f = fopen(disk_path, "rb");
+    if (!f) return (*env)->NewStringUTF(env, "Failed to open libart.so on disk");
+
+    SHA256_CTX disk_ctx;
+    sha256_init(&disk_ctx);
     unsigned char buf[4096];
     size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
-        sha256_update(&ctx, buf, n);
+    while ((n=fread(buf,1,sizeof(buf),f))>0)
+        sha256_update(&disk_ctx,buf,n);
     fclose(f);
 
-    unsigned char hash[32];
-    sha256_final(&ctx, hash);
+    unsigned char disk_hash[32];
+    sha256_final(&disk_ctx, disk_hash);
 
-    char hex[65];
-    for (int i = 0; i < 32; i++) sprintf(hex + i*2, "%02x", hash[i]);
-    hex[64] = 0;
+    // ---- HASH MEMORY ----
+    FILE *maps=fopen("/proc/self/maps","r");
+    if(!maps) return (*env)->NewStringUTF(env,"Failed to open /proc/self/maps");
 
-    return (*env)->NewStringUTF(env, hex);
+    SHA256_CTX mem_ctx;
+    sha256_init(&mem_ctx);
+
+    unsigned long mem_start=0, mem_end=0, total_mem_size=0;
+    char line[512];
+    int found=0;
+
+    while(fgets(line,sizeof(line),maps)){
+        if(strstr(line,"libart.so")){
+            unsigned long start,end;
+            if(sscanf(line,"%lx-%lx",&start,&end)==2){
+                FILE* mem=fopen("/proc/self/mem","rb");
+                if(!mem) continue;
+                fseek(mem,start,SEEK_SET);
+                unsigned long size=end-start;
+                total_mem_size += size;
+                sha256_update(&mem_ctx,(const uint8_t*)&start,sizeof(start)); // marker
+                while(size>0){
+                    size_t chunk=size>4096?4096:size;
+                    if(fread(buf,1,chunk,mem)!=chunk) break;
+                    sha256_update(&mem_ctx,buf,chunk);
+                    size-=chunk;
+                }
+                fclose(mem);
+                if(!found){ mem_start=start; found=1; }
+                mem_end=end;
+            }
+        }
+    }
+    fclose(maps);
+
+    unsigned char mem_hash[32];
+    sha256_final(&mem_ctx, mem_hash);
+
+    char disk_hex[65], mem_hex[65];
+    to_hex(disk_hash, disk_hex);
+    to_hex(mem_hash, mem_hex);
+
+    char result[512];
+    snprintf(result,sizeof(result),
+        "📦 Disk libart.so:\n"
+        "Path: %s\n"
+        "Size: %ld bytes\n"
+        "SHA256: %s\n\n"
+        "💾 Memory libart.so mapping:\n"
+        "Address Range: 0x%lx - 0x%lx\n"
+        "Size: %lu bytes\n"
+        "SHA256: %s",
+        disk_path, file_size, disk_hex,
+        mem_start, mem_end, total_mem_size, mem_hex);
+
+    return (*env)->NewStringUTF(env,result);
 }

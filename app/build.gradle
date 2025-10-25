@@ -28,7 +28,7 @@ android {
     // Point Gradle to your CMakeLists.txt file
     externalNativeBuild {
         cmake {
-            path "src/main/cpp/CMakeLists.txt"
+            path "CMakeLists.txt"
         }
     }
 

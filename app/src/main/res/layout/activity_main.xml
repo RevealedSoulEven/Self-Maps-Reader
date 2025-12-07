@@ -1,6 +1,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:orientation="vertical"
     android:padding="16dp"
+    android:background="#121212"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -11,8 +12,8 @@
         android:layout_height="wrap_content" />
 
     <Button
-        android:id="@+id/shareButton"
-        android:text="Export &amp; Share Status"
+        android:id="@+id/mapsButton"
+        android:text="Read /proc/self/maps"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp" />
@@ -25,20 +26,23 @@
         android:layout_marginTop="8dp" />
 
     <Button
-        android:id="@+id/toggleThemeButton"
-        android:text="Toggle Light/Dark Mode"
+        android:id="@+id/shareButton"
+        android:text="Export &amp; Share Output"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp" />
 
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:layout_marginTop="8dp">
 
         <TextView
             android:id="@+id/outputText"
             android:textSize="12sp"
+            android:textColor="#EEEEEE"
+            android:padding="8dp"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Output will appear here" />

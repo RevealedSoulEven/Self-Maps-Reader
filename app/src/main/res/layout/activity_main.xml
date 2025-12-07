@@ -45,6 +45,10 @@
             android:padding="8dp"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:textIsSelectable="true"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:longClickable="true"
             android:text="Output will appear here" />
     </ScrollView>
 </LinearLayout>

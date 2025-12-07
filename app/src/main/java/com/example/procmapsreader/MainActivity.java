@@ -1,19 +1,20 @@
 package com.example.selfmapsreader;
 
-import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.TextView;
-import android.widget.ScrollView;
-import android.content.Intent;
-import android.net.Uri;
 
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.content.FileProvider;
 
-import java.io.*;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
 
-public class MainActivity extends Activity {
+public class MainActivity extends AppCompatActivity {
 
     static {
         System.loadLibrary("native-lib");
@@ -22,55 +23,58 @@ public class MainActivity extends Activity {
     private TextView outputText;
     private File outputFile;
 
-    // Native methods
+    // Native methods (C side)
     public native String readProcSelfStatus();
+    public native String readProcSelfMaps();
     public native String getLibArtHash();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Force app to always use dark mode
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         outputText = findViewById(R.id.outputText);
         Button readButton = findViewById(R.id.readButton);
-        Button exportButton = findViewById(R.id.shareButton);
+        Button mapsButton = findViewById(R.id.mapsButton);
         Button hashButton = findViewById(R.id.hashButton);
-        Button themeButton = findViewById(R.id.toggleThemeButton);
+        Button shareButton = findViewById(R.id.shareButton);
 
-        // Toggle light/dark mode
-        themeButton.setOnClickListener(v -> {
-            int mode = AppCompatDelegate.getDefaultNightMode();
-            if (mode == AppCompatDelegate.MODE_NIGHT_YES)
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
-            else
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
-        });
-
+        // Read /proc/self/status (native)
         readButton.setOnClickListener(v -> {
             String result = readProcSelfStatus();
             outputText.setText(result);
         });
 
-        exportButton.setOnClickListener(v -> exportProcStatus());
+        // Read /proc/self/maps (native)
+        mapsButton.setOnClickListener(v -> {
+            String result = readProcSelfMaps();
+            outputText.setText(result);
+        });
 
+        // Get libart.so hash (native)
         hashButton.setOnClickListener(v -> {
             String hashResult = getLibArtHash();
             outputText.setText(hashResult);
         });
+
+        // Export whatever is shown in the TextView
+        shareButton.setOnClickListener(v -> exportCurrentOutput());
     }
 
-    private void exportProcStatus() {
+    private void exportCurrentOutput() {
         try {
-            outputFile = new File(getFilesDir(), "proc_self_status.txt");
-            BufferedReader reader = new BufferedReader(new FileReader("/proc/self/status"));
-            BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile));
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                writer.write(line);
-                writer.newLine();
+            String text = outputText.getText().toString();
+            if (text == null || text.isEmpty()) {
+                outputText.setText("Nothing to export yet.");
+                return;
             }
-            reader.close();
+
+            outputFile = new File(getFilesDir(), "self_reader_output.txt");
+            BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile, false));
+            writer.write(text);
             writer.close();
 
             shareFile(outputFile);
@@ -80,13 +84,16 @@ public class MainActivity extends Activity {
     }
 
     private void shareFile(File file) {
-        Uri uri = FileProvider.getUriForFile(this,
-                getPackageName() + ".provider", file);
+        Uri uri = FileProvider.getUriForFile(
+                this,
+                getPackageName() + ".provider",
+                file
+        );
 
         Intent intent = new Intent(Intent.ACTION_SEND);
         intent.setType("text/plain");
         intent.putExtra(Intent.EXTRA_STREAM, uri);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        startActivity(Intent.createChooser(intent, "Share file"));
+        startActivity(Intent.createChooser(intent, "Share output"));
     }
 }

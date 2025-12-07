@@ -73,11 +73,24 @@ void sha256_update(SHA256_CTX *ctx,const uint8_t data[],size_t len){
 
 void sha256_final(SHA256_CTX *ctx,uint8_t hash[]){
     size_t i=ctx->datalen;
-    if(ctx->datalen<56){ ctx->data[i++]=0x80; while(i<56) ctx->data[i++]=0x00; }
-    else { ctx->data[i++]=0x80; while(i<64) ctx->data[i++]=0x00; sha256_transform(ctx,ctx->data); memset(ctx->data,0,56); }
+    if(ctx->datalen<56){
+        ctx->data[i++]=0x80;
+        while(i<56) ctx->data[i++]=0x00;
+    } else {
+        ctx->data[i++]=0x80;
+        while(i<64) ctx->data[i++]=0x00;
+        sha256_transform(ctx,ctx->data);
+        memset(ctx->data,0,56);
+    }
     ctx->bitlen+=ctx->datalen*8;
-    ctx->data[63]=ctx->bitlen; ctx->data[62]=ctx->bitlen>>8; ctx->data[61]=ctx->bitlen>>16; ctx->data[60]=ctx->bitlen>>24;
-    ctx->data[59]=ctx->bitlen>>32; ctx->data[58]=ctx->bitlen>>40; ctx->data[57]=ctx->bitlen>>48; ctx->data[56]=ctx->bitlen>>56;
+    ctx->data[63]=ctx->bitlen;
+    ctx->data[62]=ctx->bitlen>>8;
+    ctx->data[61]=ctx->bitlen>>16;
+    ctx->data[60]=ctx->bitlen>>24;
+    ctx->data[59]=ctx->bitlen>>32;
+    ctx->data[58]=ctx->bitlen>>40;
+    ctx->data[57]=ctx->bitlen>>48;
+    ctx->data[56]=ctx->bitlen>>56;
     sha256_transform(ctx,ctx->data);
     for(i=0;i<4;++i){
         hash[i]=(ctx->state[0]>>(24-i*8))&0xff;
@@ -92,45 +105,70 @@ void sha256_final(SHA256_CTX *ctx,uint8_t hash[]){
 }
 
 void to_hex(const uint8_t *hash, char *out) {
-    for (int i=0;i<32;i++) sprintf(out+i*2,"%02x",hash[i]);
+    for (int i=0;i<32;i++)
+        sprintf(out+i*2,"%02x",hash[i]);
     out[64]=0;
 }
 
-// ========================= JNI METHODS =========================
+// ========================= JNI HELPERS =========================
 
-// ✅ Read /proc/self/status
-JNIEXPORT jstring JNICALL
-Java_com_example_selfmapsreader_MainActivity_readProcSelfStatus(JNIEnv* env, jobject thiz) {
-    FILE* f = fopen("/proc/self/status", "r");
-    if (!f) return (*env)->NewStringUTF(env, "Failed to open /proc/self/status");
+static jstring read_proc_file(JNIEnv* env, const char* path) {
+    FILE* f = fopen(path, "r");
+    if (!f) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Failed to open %s", path);
+        return (*env)->NewStringUTF(env, msg);
+    }
 
     char* buf = NULL;
     size_t len = 0;
     char line[512];
+
     while (fgets(line, sizeof(line), f)) {
         size_t l = strlen(line);
-        buf = realloc(buf, len + l + 1);
+        char* newBuf = realloc(buf, len + l + 1);
+        if (!newBuf) {
+            free(buf);
+            fclose(f);
+            return (*env)->NewStringUTF(env, "Out of memory while reading file");
+        }
+        buf = newBuf;
         memcpy(buf + len, line, l);
         len += l;
         buf[len] = 0;
     }
     fclose(f);
+
     jstring result = (*env)->NewStringUTF(env, buf ? buf : "");
     free(buf);
     return result;
 }
 
-// ✅ Calculate SHA256 + size + address info for libart.so
+// ========================= JNI METHODS =========================
+
+// Read /proc/self/status (native)
+JNIEXPORT jstring JNICALL
+Java_com_example_selfmapsreader_MainActivity_readProcSelfStatus(JNIEnv* env, jobject thiz) {
+    return read_proc_file(env, "/proc/self/status");
+}
+
+// Read /proc/self/maps (native)
+JNIEXPORT jstring JNICALL
+Java_com_example_selfmapsreader_MainActivity_readProcSelfMaps(JNIEnv* env, jobject thiz) {
+    return read_proc_file(env, "/proc/self/maps");
+}
+
+// Calculate SHA256 of libart.so on disk and in memory
 JNIEXPORT jstring JNICALL
 Java_com_example_selfmapsreader_MainActivity_getLibArtHash(JNIEnv* env, jobject thiz) {
     const char* disk_path = "/apex/com.android.art/lib64/libart.so";
 
-    // ---- Get file size ----
+    // Get file size
     struct stat st;
     long file_size = 0;
     if (stat(disk_path, &st) == 0) file_size = st.st_size;
 
-    // ---- HASH DISK ----
+    // HASH DISK
     FILE* f = fopen(disk_path, "rb");
     if (!f) return (*env)->NewStringUTF(env, "Failed to open libart.so on disk");
 
@@ -145,7 +183,7 @@ Java_com_example_selfmapsreader_MainActivity_getLibArtHash(JNIEnv* env, jobject 
     unsigned char disk_hash[32];
     sha256_final(&disk_ctx, disk_hash);
 
-    // ---- HASH MEMORY ----
+    // HASH MEMORY
     FILE *maps=fopen("/proc/self/maps","r");
     if(!maps) return (*env)->NewStringUTF(env,"Failed to open /proc/self/maps");
 
@@ -157,28 +195,31 @@ Java_com_example_selfmapsreader_MainActivity_getLibArtHash(JNIEnv* env, jobject 
     int found=0;
 
     while(fgets(line,sizeof(line),maps)){
-    if(strstr(line,"libart.so")){
-        unsigned long start,end;
-        char perms[8];
-        if(sscanf(line,"%lx-%lx %4s",&start,&end,perms)==3){
-            if (strstr(perms,"rw")) continue; // ✅ Skip writable sections
-            FILE* mem=fopen("/proc/self/mem","rb");
-            if(!mem) continue;
-            fseek(mem,start,SEEK_SET);
-            unsigned long size=end-start;
-            total_mem_size += size;
-            while(size>0){
-                size_t chunk=size>4096?4096:size;
-                if(fread(buf,1,chunk,mem)!=chunk) break;
-                sha256_update(&mem_ctx,buf,chunk);
-                size-=chunk;
+        if(strstr(line,"libart.so")){
+            unsigned long start,end;
+            char perms[8];
+            if(sscanf(line,"%lx-%lx %4s",&start,&end,perms)==3){
+                if (strstr(perms,"rw")) continue; // skip writable
+                FILE* mem=fopen("/proc/self/mem","rb");
+                if(!mem) continue;
+                if(fseek(mem,(long)start,SEEK_SET)!=0){
+                    fclose(mem);
+                    continue;
+                }
+                unsigned long size=end-start;
+                total_mem_size += size;
+                while(size>0){
+                    size_t chunk=size>4096?4096:size;
+                    if(fread(buf,1,chunk,mem)!=chunk) break;
+                    sha256_update(&mem_ctx,buf,chunk);
+                    size-=chunk;
+                }
+                fclose(mem);
+                if(!found){ mem_start=start; found=1; }
+                mem_end=end;
             }
-            fclose(mem);
-            if(!found){ mem_start=start; found=1; }
-            mem_end=end;
         }
     }
-}
 
     fclose(maps);
 
@@ -191,16 +232,16 @@ Java_com_example_selfmapsreader_MainActivity_getLibArtHash(JNIEnv* env, jobject 
 
     char result[512];
     snprintf(result,sizeof(result),
-        "📦 Disk libart.so:\n"
-        "Path: %s\n"
-        "Size: %ld bytes\n"
-        "SHA256: %s\n\n"
-        "💾 Memory libart.so mapping:\n"
-        "Address Range: 0x%lx - 0x%lx\n"
-        "Size: %lu bytes\n"
-        "SHA256: %s",
-        disk_path, file_size, disk_hex,
-        mem_start, mem_end, total_mem_size, mem_hex);
+             "Disk libart.so:\n"
+             "Path: %s\n"
+             "Size: %ld bytes\n"
+             "SHA256: %s\n\n"
+             "Memory libart.so mapping:\n"
+             "Address Range: 0x%lx - 0x%lx\n"
+             "Size: %lu bytes\n"
+             "SHA256: %s",
+             disk_path, file_size, disk_hex,
+             mem_start, mem_end, total_mem_size, mem_hex);
 
     return (*env)->NewStringUTF(env,result);
 }

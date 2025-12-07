@@ -160,63 +160,112 @@ Java_com_example_selfmapsreader_MainActivity_readProcSelfMaps(JNIEnv* env, jobje
 
 // Calculate SHA256 of libart.so on disk and in memory
 JNIEXPORT jstring JNICALL
-Java_com_example_selfmapsreader_MainActivity_getLibArtHash(JNIEnv* env, jobject thiz) {
-    const char* disk_path = "/apex/com.android.art/lib64/libart.so";
+Java_com_example_selfmapsreader_MainActivity_getLibArtHash(JNIEnv *env, jobject thiz) {
 
-    // Get file size
-    struct stat st;
+    const char *paths[] = {
+        "/apex/com.android.art/lib64/libart.so",
+        "/apex/com.android.art/lib/libart.so",
+        "/system/lib64/libart.so",
+        "/system/lib/libart.so"
+    };
+
+    const char *disk_path = NULL;
+    FILE *f = NULL;
+
+    // Try multiple known paths
+    for (int i = 0; i < 4; i++) {
+        f = fopen(paths[i], "rb");
+        if (f) {
+            disk_path = paths[i];
+            break;
+        }
+    }
+
+    char disk_hex[65];
     long file_size = 0;
-    if (stat(disk_path, &st) == 0) file_size = st.st_size;
 
-    // HASH DISK
-    FILE* f = fopen(disk_path, "rb");
-    if (!f) return (*env)->NewStringUTF(env, "Failed to open libart.so on disk");
+    // --------------------------
+    // 1️⃣ HASH DISK (OPTIONAL)
+    // --------------------------
+    if (f) {
+        SHA256_CTX disk_ctx;
+        sha256_init(&disk_ctx);
 
-    SHA256_CTX disk_ctx;
-    sha256_init(&disk_ctx);
-    unsigned char buf[4096];
-    size_t n;
-    while ((n=fread(buf,1,sizeof(buf),f))>0)
-        sha256_update(&disk_ctx,buf,n);
-    fclose(f);
+        unsigned char buf[4096];
+        size_t n;
 
-    unsigned char disk_hash[32];
-    sha256_final(&disk_ctx, disk_hash);
+        struct stat st;
+        if (stat(disk_path, &st) == 0)
+            file_size = st.st_size;
 
-    // HASH MEMORY
-    FILE *maps=fopen("/proc/self/maps","r");
-    if(!maps) return (*env)->NewStringUTF(env,"Failed to open /proc/self/maps");
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+            sha256_update(&disk_ctx, buf, n);
+        fclose(f);
+
+        unsigned char disk_hash[32];
+        sha256_final(&disk_ctx, disk_hash);
+        to_hex(disk_hash, disk_hex);
+
+    } else {
+        // Could not load file → mark unavailable
+        strcpy(disk_hex, "Unavailable");
+        file_size = -1;
+    }
+
+    // --------------------------
+    // 2️⃣ HASH MEMORY (ALWAYS RUN)
+    // --------------------------
+    FILE *maps = fopen("/proc/self/maps", "r");
+    if (!maps) return (*env)->NewStringUTF(env, "Failed to open /proc/self/maps");
 
     SHA256_CTX mem_ctx;
     sha256_init(&mem_ctx);
 
-    unsigned long mem_start=0, mem_end=0, total_mem_size=0;
     char line[512];
-    int found=0;
+    unsigned long mem_start = 0, mem_end = 0, total_mem_size = 0;
+    int found = 0;
 
-    while(fgets(line,sizeof(line),maps)){
-        if(strstr(line,"libart.so")){
-            unsigned long start,end;
+    while (fgets(line, sizeof(line), maps)) {
+        if (strstr(line, "libart.so")) {
+
+            unsigned long start, end;
             char perms[8];
-            if(sscanf(line,"%lx-%lx %4s",&start,&end,perms)==3){
-                if (strstr(perms,"rw")) continue; // skip writable
-                FILE* mem=fopen("/proc/self/mem","rb");
-                if(!mem) continue;
-                if(fseek(mem,(long)start,SEEK_SET)!=0){
+
+            if (sscanf(line, "%lx-%lx %4s", &start, &end, perms) == 3) {
+
+                // Skip writable regions (hooking frameworks modify these)
+                if (strstr(perms, "w"))
+                    continue;
+
+                FILE *mem = fopen("/proc/self/mem", "rb");
+                if (!mem)
+                    continue;
+
+                if (fseek(mem, (long)start, SEEK_SET) != 0) {
                     fclose(mem);
                     continue;
                 }
-                unsigned long size=end-start;
+
+                unsigned long size = end - start;
                 total_mem_size += size;
-                while(size>0){
-                    size_t chunk=size>4096?4096:size;
-                    if(fread(buf,1,chunk,mem)!=chunk) break;
-                    sha256_update(&mem_ctx,buf,chunk);
-                    size-=chunk;
+
+                while (size > 0) {
+                    size_t chunk = size > 4096 ? 4096 : size;
+                    unsigned char temp[4096];
+                    if (fread(temp, 1, chunk, mem) != chunk)
+                        break;
+
+                    sha256_update(&mem_ctx, temp, chunk);
+                    size -= chunk;
                 }
+
                 fclose(mem);
-                if(!found){ mem_start=start; found=1; }
-                mem_end=end;
+
+                if (!found) {
+                    mem_start = start;
+                    found = 1;
+                }
+                mem_end = end;
             }
         }
     }
@@ -226,22 +275,27 @@ Java_com_example_selfmapsreader_MainActivity_getLibArtHash(JNIEnv* env, jobject 
     unsigned char mem_hash[32];
     sha256_final(&mem_ctx, mem_hash);
 
-    char disk_hex[65], mem_hex[65];
-    to_hex(disk_hash, disk_hex);
+    char mem_hex[65];
     to_hex(mem_hash, mem_hex);
 
-    char result[512];
-    snprintf(result,sizeof(result),
+    // --------------------------
+    // 3️⃣ BUILD RESULT STRING
+    // --------------------------
+    char result[1024];
+    snprintf(result, sizeof(result),
              "Disk libart.so:\n"
              "Path: %s\n"
              "Size: %ld bytes\n"
              "SHA256: %s\n\n"
              "Memory libart.so mapping:\n"
              "Address Range: 0x%lx - 0x%lx\n"
-             "Size: %lu bytes\n"
+             "Total Size: %lu bytes\n"
              "SHA256: %s",
-             disk_path, file_size, disk_hex,
-             mem_start, mem_end, total_mem_size, mem_hex);
+             (disk_path ? disk_path : "Not found"),
+             file_size,
+             disk_hex,
+             mem_start, mem_end, total_mem_size,
+             mem_hex);
 
-    return (*env)->NewStringUTF(env,result);
+    return (*env)->NewStringUTF(env, result);
 }

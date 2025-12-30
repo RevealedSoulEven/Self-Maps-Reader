@@ -15,10 +15,10 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 /* ============================================================
- * CRC32 (fast + enough for tamper detection)
+ * CRC32
  * ============================================================ */
 static uint32_t crc32_table[256];
-static int crc32_init_done = 0;
+static int crc_init = 0;
 
 static void crc32_init(void) {
     for (uint32_t i = 0; i < 256; i++) {
@@ -27,27 +27,23 @@ static void crc32_init(void) {
             c = (c & 1) ? (0xEDB88320 ^ (c >> 1)) : (c >> 1);
         crc32_table[i] = c;
     }
-    crc32_init_done = 1;
+    crc_init = 1;
 }
 
 static uint32_t crc32_calc(const uint8_t *buf, size_t len) {
-    if (!crc32_init_done)
-        crc32_init();
-
+    if (!crc_init) crc32_init();
     uint32_t c = 0xFFFFFFFF;
     for (size_t i = 0; i < len; i++)
         c = crc32_table[(c ^ buf[i]) & 0xFF] ^ (c >> 8);
-
     return c ^ 0xFFFFFFFF;
 }
 
 /* ============================================================
- * /proc helpers (UNCHANGED FROM YOUR ORIGINAL DESIGN)
+ * PROC FILE HELPERS (UNCHANGED)
  * ============================================================ */
 static jstring read_proc_file(JNIEnv* env, const char* path) {
     FILE* f = fopen(path, "r");
-    if (!f)
-        return (*env)->NewStringUTF(env, "Failed to open file");
+    if (!f) return (*env)->NewStringUTF(env, "Failed to open file");
 
     char* buf = NULL;
     size_t len = 0;
@@ -55,13 +51,13 @@ static jstring read_proc_file(JNIEnv* env, const char* path) {
 
     while (fgets(line, sizeof(line), f)) {
         size_t l = strlen(line);
-        char* nbuf = realloc(buf, len + l + 1);
-        if (!nbuf) {
+        char* nb = realloc(buf, len + l + 1);
+        if (!nb) {
             free(buf);
             fclose(f);
             return (*env)->NewStringUTF(env, "OOM");
         }
-        buf = nbuf;
+        buf = nb;
         memcpy(buf + len, line, l);
         len += l;
         buf[len] = 0;
@@ -86,29 +82,55 @@ Java_com_example_selfmapsreader_MainActivity_readProcSelfMaps(
 }
 
 /* ============================================================
- * Find runtime base address of loaded library
+ * MAP ENTRY STRUCT
  * ============================================================ */
-static uintptr_t find_runtime_base(const char *soname) {
+typedef struct {
+    uintptr_t start;
+    uintptr_t end;
+    uintptr_t file_offset;
+} map_entry_t;
+
+/* ============================================================
+ * Find mapping that backs file offset
+ * ============================================================ */
+static int find_mapping_for_offset(
+        const char *soname,
+        uintptr_t file_offset,
+        map_entry_t *out) {
+
     FILE *fp = fopen("/proc/self/maps", "r");
     if (!fp) return 0;
 
     char line[512];
     while (fgets(line, sizeof(line), fp)) {
-        if (strstr(line, soname) && strstr(line, "r-xp")) {
-            uintptr_t base = 0;
-            sscanf(line, "%lx-%*lx", &base);
+        if (!strstr(line, soname)) continue;
+
+        uintptr_t start, end, off;
+        char perms[8];
+
+        if (sscanf(line, "%lx-%lx %4s %lx", &start, &end, perms, &off) != 4)
+            continue;
+
+        if (!(perms[0] == 'r' && perms[2] == 'x'))
+            continue;
+
+        if (file_offset >= off && file_offset < off + (end - start)) {
+            out->start = start;
+            out->end = end;
+            out->file_offset = off;
             fclose(fp);
-            return base;
+            return 1;
         }
     }
+
     fclose(fp);
     return 0;
 }
 
 /* ============================================================
- * ELF-aware executable segment comparison
+ * ELF EXECUTABLE SEGMENT CHECK
  * ============================================================ */
-static int check_library_integrity(
+static void check_library(
         const char *soname,
         const char *disk_path,
         char *out,
@@ -120,85 +142,70 @@ static int check_library_integrity(
     p += snprintf(p, left, "\n=== %s ===\n", soname);
     left = out_sz - (p - out);
 
-    uintptr_t mem_base = find_runtime_base(soname);
-    if (!mem_base) {
-        p += snprintf(p, left, "[-] Failed to find runtime base\n");
-        return -1;
-    }
-
-    p += snprintf(p, left, "[+] Runtime base: 0x%lx\n", mem_base);
-    left = out_sz - (p - out);
-
     int fd = open(disk_path, O_RDONLY);
     if (fd < 0) {
         p += snprintf(p, left, "[-] Failed to open disk ELF\n");
-        return -1;
+        return;
     }
 
     struct stat st;
     fstat(fd, &st);
 
-    void *disk_map = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    uint8_t *disk = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
 
-    if (disk_map == MAP_FAILED) {
+    if (disk == MAP_FAILED) {
         p += snprintf(p, left, "[-] mmap failed\n");
-        return -1;
+        return;
     }
 
-    Elf64_Ehdr *eh = (Elf64_Ehdr *)disk_map;
-    Elf64_Phdr *ph = (Elf64_Phdr *)((char *)disk_map + eh->e_phoff);
-
-    int bad = 0;
+    Elf64_Ehdr *eh = (Elf64_Ehdr *)disk;
+    Elf64_Phdr *ph = (Elf64_Phdr *)(disk + eh->e_phoff);
 
     for (int i = 0; i < eh->e_phnum; i++) {
-        if (ph[i].p_type != PT_LOAD)
+        if (ph[i].p_type != PT_LOAD) continue;
+        if (!(ph[i].p_flags & PF_X)) continue;
+
+        map_entry_t map;
+        if (!find_mapping_for_offset(soname, ph[i].p_offset, &map)) {
+            p += snprintf(p, left,
+                          "[-] No runtime map for segment %d (offset 0x%lx)\n",
+                          i, (unsigned long)ph[i].p_offset);
             continue;
+        }
 
-        if (!(ph[i].p_flags & PF_X))
-            continue;
+        uintptr_t mem_addr =
+                map.start + (ph[i].p_offset - map.file_offset);
 
-        uint8_t *disk_seg =
-                (uint8_t *)disk_map + ph[i].p_offset;
-        uint8_t *mem_seg =
-                (uint8_t *)(mem_base + ph[i].p_vaddr);
+        uint32_t disk_crc =
+                crc32_calc(disk + ph[i].p_offset, ph[i].p_filesz);
 
-        size_t sz = ph[i].p_filesz;
+        uint32_t mem_crc =
+                crc32_calc((uint8_t *)mem_addr, ph[i].p_filesz);
 
-        uint32_t disk_crc = crc32_calc(disk_seg, sz);
-        uint32_t mem_crc  = crc32_calc(mem_seg,  sz);
-
-        p += snprintf(
-                p, left,
+        p += snprintf(p, left,
                 "Segment %d:\n"
-                "  offset=0x%lx vaddr=0x%lx size=%zu\n"
+                "  file_off=0x%lx size=%lu\n"
+                "  runtime=0x%lx\n"
                 "  disk_crc=0x%08x mem_crc=0x%08x\n",
                 i,
                 (unsigned long)ph[i].p_offset,
-                (unsigned long)ph[i].p_vaddr,
-                sz,
+                (unsigned long)ph[i].p_filesz,
+                (unsigned long)mem_addr,
                 disk_crc,
                 mem_crc);
 
         left = out_sz - (p - out);
 
-        if (disk_crc != mem_crc) {
-            p += snprintf(p, left,
-                          "  !!! EXECUTABLE SEGMENT MODIFIED !!!\n");
-            bad = 1;
-        }
+        if (disk_crc != mem_crc)
+            p += snprintf(p, left, "  !!! MODIFIED !!!\n");
     }
 
-    munmap(disk_map, st.st_size);
-
-    if (!bad)
-        p += snprintf(p, left, "[+] Integrity OK\n");
-
-    return bad ? -1 : 0;
+    munmap(disk, st.st_size);
 }
 
 /* ============================================================
- * MAIN JNI: libc + libart integrity check
+ * MAIN JNI ENTRY
  * ============================================================ */
 JNIEXPORT jstring JNICALL
 Java_com_example_selfmapsreader_MainActivity_getLibArtHash(
@@ -207,15 +214,13 @@ Java_com_example_selfmapsreader_MainActivity_getLibArtHash(
     char result[8192];
     memset(result, 0, sizeof(result));
 
-    /* libc */
-    check_library_integrity(
+    check_library(
             "libc.so",
             "/apex/com.android.runtime/lib64/bionic/libc.so",
             result + strlen(result),
             sizeof(result) - strlen(result));
 
-    /* libart */
-    check_library_integrity(
+    check_library(
             "libart.so",
             "/apex/com.android.art/lib64/libart.so",
             result + strlen(result),

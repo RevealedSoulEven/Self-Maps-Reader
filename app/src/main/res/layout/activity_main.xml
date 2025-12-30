@@ -20,7 +20,7 @@
 
     <Button
         android:id="@+id/hashButton"
-        android:text="Get libart.so Hash"
+        android:text="Get Native Libs Hash"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp" />

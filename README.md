@@ -1,6 +1,7 @@
 ## Self-Maps-Reader
 
-simple app to read `/proc/self/maps` for debugging and learning purpose.
+simple app to read its own `/proc/self/maps` and `/proc/self/status` for debugging and learning purpose.
 
 - check libc.so integrity on disk and memory
 - check libart.so integrity on disk and memory
+(similar to what modern apps use to verify integrity and detect inejctions)

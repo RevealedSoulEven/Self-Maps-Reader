@@ -1,54 +1,100 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:orientation="vertical"
-    android:padding="16dp"
+    android:padding="12dp"
     android:background="#121212"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <Button
-        android:id="@+id/readButton"
-        android:text="Read /proc/self/status"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
-
-    <Button
-        android:id="@+id/mapsButton"
-        android:text="Read /proc/self/maps"
-        android:layout_width="match_parent"
+    <!-- Section: proc -->
+    <TextView
+        android:text="Read /proc/self/"
+        android:textColor="#AAAAAA"
+        android:textSize="13sp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp" />
+        android:paddingBottom="4dp" />
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <Button
+            android:id="@+id/mapsButton"
+            android:text="maps"
+            android:textSize="12sp"
+            android:layout_weight="1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content" />
+
+        <Button
+            android:id="@+id/smapsButton"
+            android:text="smaps"
+            android:textSize="12sp"
+            android:layout_weight="1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp" />
+
+        <Button
+            android:id="@+id/readButton"
+            android:text="status"
+            android:textSize="12sp"
+            android:layout_weight="1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp" />
+    </LinearLayout>
+
+    <!-- Section: integrity -->
+    <TextView
+        android:text="Integrity checks"
+        android:textColor="#AAAAAA"
+        android:textSize="13sp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingTop="10dp"
+        android:paddingBottom="4dp" />
 
     <Button
         android:id="@+id/hashButton"
-        android:text="Get Native Libs Hash"
+        android:text="native libs hash"
+        android:textSize="12sp"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp" />
+        android:layout_height="wrap_content" />
 
-    <Button
-        android:id="@+id/shareButton"
-        android:text="Export &amp; Share Output"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp" />
-
-    <ScrollView
+    <!-- Output + share -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginTop="8dp">
 
-        <TextView
-            android:id="@+id/outputText"
-            android:textSize="12sp"
-            android:textColor="#EEEEEE"
-            android:padding="8dp"
+        <ScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textIsSelectable="true"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:longClickable="true"
-            android:text="Output will appear here" />
-    </ScrollView>
+            android:layout_height="match_parent">
+
+            <TextView
+                android:id="@+id/outputText"
+                android:text="Output will appear here"
+                android:textSize="11sp"
+                android:textColor="#EEEEEE"
+                android:padding="12dp"
+                android:textIsSelectable="true"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </ScrollView>
+
+        <ImageButton
+            android:id="@+id/shareButton"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_share"
+            android:tint="#EEEEEE"
+            android:contentDescription="Share output" />
+    </FrameLayout>
+
 </LinearLayout>

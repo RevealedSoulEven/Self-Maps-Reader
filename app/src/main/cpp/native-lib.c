@@ -81,6 +81,13 @@ Java_com_example_selfmapsreader_MainActivity_readProcSelfMaps(
     return read_proc_file(env, "/proc/self/maps");
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_example_selfmapsreader_MainActivity_readProcSelfSmaps(
+        JNIEnv* env, jobject thiz) {
+    return read_proc_file(env, "/proc/self/smaps");
+}
+
+
 /* ============================================================
  * MAP ENTRY STRUCT
  * ============================================================ */

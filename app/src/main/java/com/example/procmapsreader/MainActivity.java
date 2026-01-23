@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.TextView;
+import android.view.View;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
@@ -45,26 +46,32 @@ public class MainActivity extends AppCompatActivity {
         Button hashButton = findViewById(R.id.hashButton);
         ImageButton shareButton = findViewById(R.id.shareButton);
 
+        shareButton.setVisibility(View.GONE);
+
         // Read /proc/self/status (native)
         readButton.setOnClickListener(v -> {
             String result = readProcSelfStatus();
             outputText.setText(result);
+            shareButton.setVisibility(View.VISIBLE);
         });
 
         // Read /proc/self/maps (native)
         mapsButton.setOnClickListener(v -> {
             String result = readProcSelfMaps();
             outputText.setText(result);
+            shareButton.setVisibility(View.VISIBLE);
         });
 
         // Read /proc/self/smaps (native)
         smapsButton.setOnClickListener(v -> {
             outputText.setText("Reading /proc/self/smaps…");
+            shareButton.setVisibility(View.GONE);
             new Thread(() -> {
                 String result = readProcSelfSmaps();
 
                 runOnUiThread(() -> {
                     outputText.setText(result);
+                    shareButton.setVisibility(View.VISIBLE);
                 });
             }).start();
         });

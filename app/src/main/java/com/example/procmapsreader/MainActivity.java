@@ -3,10 +3,10 @@ package com.example.selfmapsreader;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.TextView;
-import android.view.View;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
@@ -23,9 +23,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private TextView outputText;
-    private File outputFile;
+    private ImageButton shareButton;
 
-    // Native methods (C side)
+    private File outputFile;
+    private File smapsFile;
+    private boolean smapsActive = false;
+
     public native String readProcSelfStatus();
     public native String readProcSelfMaps();
     public native String readProcSelfSmaps();
@@ -33,69 +36,84 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // Force app to always use dark mode
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         outputText = findViewById(R.id.outputText);
+        shareButton = findViewById(R.id.shareButton);
+
         Button readButton = findViewById(R.id.readButton);
         Button mapsButton = findViewById(R.id.mapsButton);
         Button smapsButton = findViewById(R.id.smapsButton);
         Button hashButton = findViewById(R.id.hashButton);
-        ImageButton shareButton = findViewById(R.id.shareButton);
 
         shareButton.setVisibility(View.GONE);
 
-        // Read /proc/self/status (native)
         readButton.setOnClickListener(v -> {
-            String result = readProcSelfStatus();
-            outputText.setText(result);
+            smapsActive = false;
+            outputText.setText(readProcSelfStatus());
             shareButton.setVisibility(View.VISIBLE);
         });
 
-        // Read /proc/self/maps (native)
         mapsButton.setOnClickListener(v -> {
-            shareButton.setVisibility(View.GONE);
-            String result = readProcSelfMaps();
-            outputText.setText(result);
+            smapsActive = false;
+            outputText.setText(readProcSelfMaps());
             shareButton.setVisibility(View.VISIBLE);
         });
 
-        // Read /proc/self/smaps (native)
         smapsButton.setOnClickListener(v -> {
-            outputText.setText("Reading /proc/self/smaps…");
+            smapsActive = true;
             shareButton.setVisibility(View.GONE);
+            outputText.setText("Reading /proc/self/smaps…");
+
             new Thread(() -> {
-                String result = readProcSelfSmaps();
+                String smaps = readProcSelfSmaps();
+
+                try {
+                    smapsFile = new File(getFilesDir(), "self_smaps.txt");
+                    BufferedWriter w = new BufferedWriter(new FileWriter(smapsFile, false));
+                    w.write(smaps);
+                    w.close();
+                } catch (Exception e) {
+                    runOnUiThread(() ->
+                        outputText.setText("Failed to save smaps: " + e.getMessage())
+                    );
+                    return;
+                }
+
+                int sizeKb = smaps.length() / 1024;
 
                 runOnUiThread(() -> {
-                    outputText.setText(result);
+                    outputText.setText(
+                        "/proc/self/smaps\n\nSize: " + sizeKb + " KB\n\nTap share to export full file"
+                    );
                     shareButton.setVisibility(View.VISIBLE);
                 });
             }).start();
         });
 
-
-        // Get libart.so hash (native)
         hashButton.setOnClickListener(v -> {
-            String hashResult = getLibArtHash();
-            outputText.setText(hashResult);
-            shareButton.setVisibility(View.GONE);
+            smapsActive = false;
+            outputText.setText(getLibArtHash());
+            shareButton.setVisibility(View.VISIBLE);
         });
 
-        // Export whatever is shown in the TextView
-        shareButton.setOnClickListener(v -> exportCurrentOutput());
+        shareButton.setOnClickListener(v -> {
+            if (smapsActive && smapsFile != null) {
+                shareFile(smapsFile);
+            } else {
+                exportCurrentOutput();
+            }
+        });
     }
 
     private void exportCurrentOutput() {
         try {
             String text = outputText.getText().toString();
-            if (text == null || text.isEmpty()) {
-                outputText.setText("Nothing to export yet.");
+            if (text == null || text.isEmpty())
                 return;
-            }
 
             outputFile = new File(getFilesDir(), "self_reader_output.txt");
             BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile, false));

@@ -42,32 +42,38 @@ static uint32_t crc32_calc(const uint8_t *buf, size_t len) {
  * PROC FILE HELPERS (UNCHANGED)
  * ============================================================ */
 static jstring read_proc_file(JNIEnv* env, const char* path) {
-    FILE* f = fopen(path, "r");
-    if (!f) return (*env)->NewStringUTF(env, "Failed to open file");
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return (*env)->NewStringUTF(env, "Failed to open file");
 
-    char* buf = NULL;
-    size_t len = 0;
-    char line[512];
-
-    while (fgets(line, sizeof(line), f)) {
-        size_t l = strlen(line);
-        char* nb = realloc(buf, len + l + 1);
-        if (!nb) {
-            free(buf);
-            fclose(f);
-            return (*env)->NewStringUTF(env, "OOM");
-        }
-        buf = nb;
-        memcpy(buf + len, line, l);
-        len += l;
-        buf[len] = 0;
+    struct stat st;
+    if (fstat(fd, &st) != 0 || st.st_size <= 0) {
+        close(fd);
+        return (*env)->NewStringUTF(env, "stat failed");
     }
-    fclose(f);
 
-    jstring res = (*env)->NewStringUTF(env, buf ? buf : "");
+    char *buf = malloc(st.st_size + 1);
+    if (!buf) {
+        close(fd);
+        return (*env)->NewStringUTF(env, "OOM");
+    }
+
+    ssize_t total = 0;
+    while (total < st.st_size) {
+        ssize_t n = read(fd, buf + total, st.st_size - total);
+        if (n <= 0)
+            break;
+        total += n;
+    }
+
+    close(fd);
+    buf[total] = '\0';
+
+    jstring res = (*env)->NewStringUTF(env, buf);
     free(buf);
     return res;
 }
+
 
 JNIEXPORT jstring JNICALL
 Java_com_example_selfmapsreader_MainActivity_readProcSelfStatus(

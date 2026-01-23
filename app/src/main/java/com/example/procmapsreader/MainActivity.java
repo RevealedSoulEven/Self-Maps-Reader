@@ -26,6 +26,7 @@ public class MainActivity extends AppCompatActivity {
     // Native methods (C side)
     public native String readProcSelfStatus();
     public native String readProcSelfMaps();
+    public native String readProcSelfSmaps();
     public native String getLibArtHash();
 
     @Override
@@ -39,6 +40,7 @@ public class MainActivity extends AppCompatActivity {
         outputText = findViewById(R.id.outputText);
         Button readButton = findViewById(R.id.readButton);
         Button mapsButton = findViewById(R.id.mapsButton);
+        Button smapsButton = findViewById(R.id.smapsButton);
         Button hashButton = findViewById(R.id.hashButton);
         Button shareButton = findViewById(R.id.shareButton);
 
@@ -51,6 +53,12 @@ public class MainActivity extends AppCompatActivity {
         // Read /proc/self/maps (native)
         mapsButton.setOnClickListener(v -> {
             String result = readProcSelfMaps();
+            outputText.setText(result);
+        });
+
+        // Read /proc/self/smaps (native)
+        smapsButton.setOnClickListener(v -> {
+            String result = readProcSelfSmaps();
             outputText.setText(result);
         });
 

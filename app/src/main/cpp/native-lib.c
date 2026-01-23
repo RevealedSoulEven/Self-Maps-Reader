@@ -46,28 +46,38 @@ static jstring read_proc_file(JNIEnv* env, const char* path) {
     if (fd < 0)
         return (*env)->NewStringUTF(env, "Failed to open file");
 
-    struct stat st;
-    if (fstat(fd, &st) != 0 || st.st_size <= 0) {
-        close(fd);
-        return (*env)->NewStringUTF(env, "stat failed");
-    }
+    const size_t CHUNK = 64 * 1024; // 64 KB
+    size_t cap = CHUNK;
+    size_t len = 0;
 
-    char *buf = malloc(st.st_size + 1);
+    char *buf = malloc(cap);
     if (!buf) {
         close(fd);
         return (*env)->NewStringUTF(env, "OOM");
     }
 
-    ssize_t total = 0;
-    while (total < st.st_size) {
-        ssize_t n = read(fd, buf + total, st.st_size - total);
-        if (n <= 0)
+    while (1) {
+        if (len + CHUNK > cap) {
+            cap *= 2;
+            char *nb = realloc(buf, cap);
+            if (!nb) {
+                free(buf);
+                close(fd);
+                return (*env)->NewStringUTF(env, "OOM");
+            }
+            buf = nb;
+        }
+
+        ssize_t r = read(fd, buf + len, CHUNK);
+        if (r <= 0)
             break;
-        total += n;
+
+        len += r;
     }
 
     close(fd);
-    buf[total] = '\0';
+
+    buf[len] = '\0';
 
     jstring res = (*env)->NewStringUTF(env, buf);
     free(buf);

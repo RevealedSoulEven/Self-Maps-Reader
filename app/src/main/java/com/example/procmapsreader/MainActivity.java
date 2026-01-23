@@ -59,9 +59,16 @@ public class MainActivity extends AppCompatActivity {
 
         // Read /proc/self/smaps (native)
         smapsButton.setOnClickListener(v -> {
-            String result = readProcSelfSmaps();
-            outputText.setText(result);
+            outputText.setText("Reading /proc/self/smaps…");
+            new Thread(() -> {
+                String result = readProcSelfSmaps();
+
+                runOnUiThread(() -> {
+                    outputText.setText(result);
+                });
+            }).start();
         });
+
 
         // Get libart.so hash (native)
         hashButton.setOnClickListener(v -> {

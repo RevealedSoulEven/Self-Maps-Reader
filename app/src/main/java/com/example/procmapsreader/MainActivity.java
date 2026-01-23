@@ -57,6 +57,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Read /proc/self/maps (native)
         mapsButton.setOnClickListener(v -> {
+            shareButton.setVisibility(View.GONE);
             String result = readProcSelfMaps();
             outputText.setText(result);
             shareButton.setVisibility(View.VISIBLE);
@@ -81,6 +82,7 @@ public class MainActivity extends AppCompatActivity {
         hashButton.setOnClickListener(v -> {
             String hashResult = getLibArtHash();
             outputText.setText(hashResult);
+            shareButton.setVisibility(View.GONE);
         });
 
         // Export whatever is shown in the TextView

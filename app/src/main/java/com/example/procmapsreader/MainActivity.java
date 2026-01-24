@@ -12,10 +12,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.content.FileProvider;
 
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileReader;
 import java.io.FileWriter;
 
 public class MainActivity extends AppCompatActivity {
@@ -30,8 +28,6 @@ public class MainActivity extends AppCompatActivity {
     private ImageButton shareButton;
 
     private File activeFile;
-    private String activeLabel;
-    private boolean previewShown = false;
 
     public native String readProcSelfStatus();
     public native String readProcSelfMaps();
@@ -55,75 +51,49 @@ public class MainActivity extends AppCompatActivity {
         shareButton.setVisibility(View.GONE);
 
         statusBtn.setOnClickListener(v ->
-                handleText("status", readProcSelfStatus()));
+                handleProcText("status", readProcSelfStatus()));
 
         mapsBtn.setOnClickListener(v ->
-                handleText("maps", readProcSelfMaps()));
+                handleProcText("maps", readProcSelfMaps()));
 
         smapsBtn.setOnClickListener(v ->
-                handleText("smaps", readProcSelfSmaps()));
+                handleProcText("smaps", readProcSelfSmaps()));
 
-        hashBtn.setOnClickListener(v ->
-                handleText("native libs hash", getLibArtHash()));
+        hashBtn.setOnClickListener(v -> {
+            activeFile = null;
+            outputText.setText(getLibArtHash());
+            shareButton.setVisibility(View.GONE);
+        });
 
         shareButton.setOnClickListener(v -> {
-            if (activeFile != null)
+            if (activeFile != null) {
                 shareFile(activeFile);
+            }
         });
     }
 
-    private void handleText(String label, String text) {
-        previewShown = false;
-        activeLabel = label;
-
+    private void handleProcText(String name, String text) {
         try {
-            activeFile = new File(getFilesDir(), "self_" + label + ".txt");
+            activeFile = new File(getFilesDir(), "self_" + name + ".txt");
             BufferedWriter w = new BufferedWriter(new FileWriter(activeFile, false));
             w.write(text);
             w.close();
         } catch (Exception e) {
             outputText.setText("Save failed: " + e.getMessage());
+            shareButton.setVisibility(View.GONE);
             return;
         }
 
-        int size = text.length();
-
-        if (size <= PREVIEW_LIMIT) {
-            outputText.setText(text);
-        } else {
+        if (text.length() > PREVIEW_LIMIT) {
             outputText.setText(
-                    "/proc/self/" + label + "\n\n" +
-                    "Size: " + (size / 1024) + " KB\n\n" +
-                    "Tap again to preview\n" +
-                    "Tap share to export full file"
+                    text.substring(0, PREVIEW_LIMIT) +
+                    "\n\n[TRUNCATED – full file available via Share]"
             );
-
-            outputText.setOnClickListener(v -> {
-                if (!previewShown) {
-                    previewShown = true;
-                    showPreview();
-                }
-            });
+        } else {
+            outputText.setText(text);
         }
 
         shareButton.setVisibility(View.VISIBLE);
-    }
-
-    private void showPreview() {
-        StringBuilder sb = new StringBuilder();
-
-        try (BufferedReader r = new BufferedReader(new FileReader(activeFile))) {
-            int c;
-            while ((c = r.read()) != -1 && sb.length() < PREVIEW_LIMIT) {
-                sb.append((char) c);
-            }
-        } catch (Exception e) {
-            outputText.setText("Preview failed: " + e.getMessage());
-            return;
-        }
-
-        sb.append("\n\n[TRUNCATED – full file available via Share]");
-        outputText.setText(sb.toString());
     }
 
     private void shareFile(File file) {

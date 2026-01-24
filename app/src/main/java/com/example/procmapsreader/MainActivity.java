@@ -12,8 +12,10 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.content.FileProvider;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileReader;
 import java.io.FileWriter;
 
 public class MainActivity extends AppCompatActivity {
@@ -22,12 +24,14 @@ public class MainActivity extends AppCompatActivity {
         System.loadLibrary("native-lib");
     }
 
+    private static final int PREVIEW_LIMIT = 200 * 1024;
+
     private TextView outputText;
     private ImageButton shareButton;
 
-    private File outputFile;
-    private File smapsFile;
-    private boolean smapsActive = false;
+    private File activeFile;
+    private String activeLabel;
+    private boolean previewShown = false;
 
     public native String readProcSelfStatus();
     public native String readProcSelfMaps();
@@ -37,93 +41,89 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
-
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         outputText = findViewById(R.id.outputText);
         shareButton = findViewById(R.id.shareButton);
 
-        Button readButton = findViewById(R.id.readButton);
-        Button mapsButton = findViewById(R.id.mapsButton);
-        Button smapsButton = findViewById(R.id.smapsButton);
-        Button hashButton = findViewById(R.id.hashButton);
+        Button statusBtn = findViewById(R.id.readButton);
+        Button mapsBtn   = findViewById(R.id.mapsButton);
+        Button smapsBtn  = findViewById(R.id.smapsButton);
+        Button hashBtn   = findViewById(R.id.hashButton);
 
         shareButton.setVisibility(View.GONE);
 
-        readButton.setOnClickListener(v -> {
-            smapsActive = false;
-            outputText.setText(readProcSelfStatus());
-            shareButton.setVisibility(View.VISIBLE);
-        });
+        statusBtn.setOnClickListener(v ->
+                handleText("status", readProcSelfStatus()));
 
-        mapsButton.setOnClickListener(v -> {
-            smapsActive = false;
-            outputText.setText(readProcSelfMaps());
-            shareButton.setVisibility(View.VISIBLE);
-        });
+        mapsBtn.setOnClickListener(v ->
+                handleText("maps", readProcSelfMaps()));
 
-        smapsButton.setOnClickListener(v -> {
-            smapsActive = true;
-            shareButton.setVisibility(View.GONE);
-            outputText.setText("Reading /proc/self/smaps…");
+        smapsBtn.setOnClickListener(v ->
+                handleText("smaps", readProcSelfSmaps()));
 
-            new Thread(() -> {
-                String smaps = readProcSelfSmaps();
-
-                try {
-                    smapsFile = new File(getFilesDir(), "self_smaps.txt");
-                    BufferedWriter w = new BufferedWriter(new FileWriter(smapsFile, false));
-                    w.write(smaps);
-                    w.close();
-                } catch (Exception e) {
-                    runOnUiThread(() ->
-                        outputText.setText("Failed to save smaps: " + e.getMessage())
-                    );
-                    return;
-                }
-
-                int sizeKb = smaps.length() / 1024;
-
-                runOnUiThread(() -> {
-                    outputText.setText(
-                        "/proc/self/smaps\n\nSize: " + sizeKb + " KB\n\nTap share to export full file"
-                    );
-                    shareButton.setVisibility(View.VISIBLE);
-                });
-            }).start();
-        });
-
-        hashButton.setOnClickListener(v -> {
-            smapsActive = false;
-            outputText.setText(getLibArtHash());
-            shareButton.setVisibility(View.VISIBLE);
-        });
+        hashBtn.setOnClickListener(v ->
+                handleText("native libs hash", getLibArtHash()));
 
         shareButton.setOnClickListener(v -> {
-            if (smapsActive && smapsFile != null) {
-                shareFile(smapsFile);
-            } else {
-                exportCurrentOutput();
-            }
+            if (activeFile != null)
+                shareFile(activeFile);
         });
     }
 
-    private void exportCurrentOutput() {
+    private void handleText(String label, String text) {
+        previewShown = false;
+        activeLabel = label;
+
         try {
-            String text = outputText.getText().toString();
-            if (text == null || text.isEmpty())
-                return;
-
-            outputFile = new File(getFilesDir(), "self_reader_output.txt");
-            BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile, false));
-            writer.write(text);
-            writer.close();
-
-            shareFile(outputFile);
+            activeFile = new File(getFilesDir(), "self_" + label + ".txt");
+            BufferedWriter w = new BufferedWriter(new FileWriter(activeFile, false));
+            w.write(text);
+            w.close();
         } catch (Exception e) {
-            outputText.setText("Error exporting: " + e.getMessage());
+            outputText.setText("Save failed: " + e.getMessage());
+            return;
         }
+
+        int size = text.length();
+
+        if (size <= PREVIEW_LIMIT) {
+            outputText.setText(text);
+        } else {
+            outputText.setText(
+                    "/proc/self/" + label + "\n\n" +
+                    "Size: " + (size / 1024) + " KB\n\n" +
+                    "Tap again to preview\n" +
+                    "Tap share to export full file"
+            );
+
+            outputText.setOnClickListener(v -> {
+                if (!previewShown) {
+                    previewShown = true;
+                    showPreview();
+                }
+            });
+        }
+
+        shareButton.setVisibility(View.VISIBLE);
+    }
+
+    private void showPreview() {
+        StringBuilder sb = new StringBuilder();
+
+        try (BufferedReader r = new BufferedReader(new FileReader(activeFile))) {
+            int c;
+            while ((c = r.read()) != -1 && sb.length() < PREVIEW_LIMIT) {
+                sb.append((char) c);
+            }
+        } catch (Exception e) {
+            outputText.setText("Preview failed: " + e.getMessage());
+            return;
+        }
+
+        sb.append("\n\n[TRUNCATED – full file available via Share]");
+        outputText.setText(sb.toString());
     }
 
     private void shareFile(File file) {

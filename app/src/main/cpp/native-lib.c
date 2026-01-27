@@ -224,7 +224,7 @@ static void check_library(
             p += snprintf(p, left, "  !!! MODIFIED !!!\n");
     }
 
-    munmap(disk, st.st_size);
+    //munmap(disk, st.st_size);
 }
 
 /* ============================================================

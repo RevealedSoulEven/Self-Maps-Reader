@@ -1,4 +1,4 @@
-Name: Build Android App
+name: Build Android App
 
 on:
   workflow_dispatch: # This is now the only trigger

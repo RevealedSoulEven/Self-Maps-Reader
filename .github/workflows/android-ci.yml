@@ -1,7 +1,7 @@
 name: Build Android App
 
 on:
-  workflow_dispatch: # This is now the only trigger
+  workflow_dispatch: # Triggers the workflow only manually
 
 jobs:
   build:
@@ -20,6 +20,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # This step ensures the runner has permission to execute the script
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
@@ -28,4 +32,3 @@ jobs:
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
-          
